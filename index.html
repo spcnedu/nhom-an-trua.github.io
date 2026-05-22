@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Ăn Trưa Pro - Chia Tiền & QR</title>
+    <style>
+        :root { --primary: #27ae60; --secondary: #2c3e50; --bg: #f0f2f5; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 15px; margin: 0; }
+        .card { background: white; padding: 20px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 450px; }
+        h2 { color: var(--secondary); text-align: center; margin-bottom: 15px; font-size: 1.5rem; }
+        .section { background: #f9f9f9; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #eee; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #555; }
+        input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 10px; box-sizing: border-box; transition: 0.3s; font-size: 16px; }
+        input:focus { border-color: var(--primary); outline: none; }
+        .member-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .member-item:last-child { border-bottom: none; }
+        input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--primary); }
+        .btn { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 16px; cursor: pointer; font-weight: bold; margin-top: 10px; transition: 0.3s; }
+        .btn:hover { background: #219150; transform: translateY(-2px); }
+        .btn-secondary { background: #e0e0e0; color: #333; margin-top: 5px; }
+        .result { margin-top: 20px; padding: 15px; background: #ebf9f1; border-radius: 12px; border-left: 5px solid var(--primary); }
+        .qr-area { text-align: center; margin-top: 15px; padding: 10px; background: white; border-radius: 10px; }
+        .qr-img { max-width: 200px; border: 1px solid #eee; }
+        .history { margin-top: 20px; font-size: 0.9rem; color: #666; }
+        .history-item { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dotted #ccc; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🍴 App Chia Tiền Ăn Trưa</h2>
+    
+    <div class="section">
+        <label>💳 Thông tin nhận tiền (Để tạo QR)</label>
+        <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+            <input type="text" id="bankId" placeholder="Mã NH (Ví dụ: mbbank, vcb...)" style="flex: 1;">
+            <input type="text" id="accNo" placeholder="Số tài khoản" style="flex: 1.5;">
+        </div>
+        <input type="text" id="accName" placeholder="Tên chủ tài khoản (Không dấu)">
+    </div>
+
+    <div class="section">
+        <label>💰 Tổng hóa đơn (VNĐ)</label>
+        <input type="number" id="totalBill" placeholder="Nhập số tiền..." oninput="calculate()">
+    </div>
+
+    <div class="section">
+        <label>👥 Điểm danh hội ăn nhậu:</label>
+        <div id="memberList"></div>
+        <div style="display: flex; gap: 5px; margin-top: 10px;">
+            <input type="text" id="newName" placeholder="Thêm bạn mới...">
+            <button class="btn" onclick="addMember()" style="width: 80px; margin-top: 0;">Thêm</button>
+        </div>
+    </div>
+
+    <button class="btn" onclick="calculate()">TÍNH TIỀN & TẠO MÃ QR</button>
+
+    <div id="resultArea" class="result" style="display:none;">
+        <div id="summaryText" style="font-size: 1.2rem; font-weight: bold; color: var(--primary); text-align: center;"></div>
+        <div id="individualResult" style="margin: 10px 0;"></div>
+        
+        <div class="qr-area" id="qrContainer">
+            <p style="font-size: 0.8rem; margin-bottom: 5px;">Quét mã để chuyển khoản:</p>
+            <img id="qrCode" class="qr-img" src="" alt="QR Chuyển tiền">
+        </div>
+        
+        <button class="btn btn-secondary" onclick="saveHistory()">Lưu vào lịch sử hôm nay</button>
+    </div>
+
+    <div class="history">
+        <details>
+            <summary style="cursor: pointer; font-weight: bold;">📜 Xem lịch sử gần đây</summary>
+            <div id="historyList" style="margin-top: 10px;"></div>
+            <button class="btn btn-secondary" onclick="clearHistory()" style="font-size: 0.7rem; padding: 5px;">Xóa lịch sử</button>
+        </details>
+    </div>
+</div>
+
+<script>
+    let members = JSON.parse(localStorage.getItem('lunch_members')) || ["An", "Bình", "Chi"];
+    let history = JSON.parse(localStorage.getItem('lunch_history')) || [];
+
+    function renderMembers() {
+        const list = document.getElementById('memberList');
+        list.innerHTML = '';
+        members.forEach((name, index) => {
+            list.innerHTML += `
+                <div class="member-item">
+                    <span>${name}</span>
+                    <input type="checkbox" class="attend-check" checked onchange="calculate()">
+                </div>
+            `;
+        });
+        localStorage.setItem('lunch_members', JSON.stringify(members));
+    }
+
+    function addMember() {
+        const nameInput = document.getElementById('newName');
+        if (nameInput.value.trim() !== "") {
+            members.push(nameInput.value.trim());
+            nameInput.value = "";
+            renderMembers();
+        }
+    }
+
+    function calculate() {
+        const total = parseFloat(document.getElementById('totalBill').value) || 0;
+        const checkboxes = document.querySelectorAll('.attend-check');
+        const attended = [];
+        checkboxes.forEach((cb, i) => { if(cb.checked) attended.push(members[i]); });
+
+        const resultArea = document.getElementById('resultArea');
+        if (attended.length > 0 && total > 0) {
+            const perPerson = Math.ceil((total / attended.length) / 1000) * 1000;
+            resultArea.style.display = 'block';
+            document.getElementById('summaryText').innerText = `Mỗi người: ${perPerson.toLocaleString()}đ`;
+            
+            // Tạo nội dung danh sách
+            document.getElementById('individualResult').innerHTML = attended.map(n => `<div>• ${n}</div>`).join('');
+
+            // Tạo mã QR (Sử dụng API VietQR)
+            const bank = document.getElementById('bankId').value;
+            const acc = document.getElementById('accNo').value;
+            const name = document.getElementById('accName').value;
+            if(bank && acc) {
+                const qrUrl = `https://img.vietqr.io/image/${bank}-${acc}-compact2.png?amount=${perPerson}&addInfo=Tien%20an%20trua&accountName=${encodeURIComponent(name)}`;
+                document.getElementById('qrCode').src = qrUrl;
+                document.getElementById('qrContainer').style.display = 'block';
+            } else {
+                document.getElementById('qrContainer').style.display = 'none';
+            }
+        }
+    }
+
+    function saveHistory() {
+        const total = document.getElementById('totalBill').value;
+        const summary = document.getElementById('summaryText').innerText;
+        const date = new Date().toLocaleDateString('vi-VN');
+        history.unshift({ date, total, summary });
+        if(history.length > 5) history.pop();
+        localStorage.setItem('lunch_history', JSON.stringify(history));
+        renderHistory();
+        alert("Đã lưu lịch sử!");
+    }
+
+    function renderHistory() {
+        const hList = document.getElementById('historyList');
+        hList.innerHTML = history.map(h => `
+            <div class="history-item">
+                <span>${h.date} - Tổng: ${parseInt(h.total).toLocaleString()}đ</span>
+                <span style="font-weight:bold">${h.summary.split(':')[1]}</span>
+            </div>
+        `).join('');
+    }
+
+    function clearHistory() { localStorage.removeItem('lunch_history'); history = []; renderHistory(); }
+
+    // Khởi tạo
+    renderMembers();
+    renderHistory();
+</script>
+
+</body>
+</html>
